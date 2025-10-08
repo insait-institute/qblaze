@@ -1,0 +1,62 @@
+[project]
+name = "qblaze"
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">= 3.10"
+keywords = [
+	"Development Status :: 3 - Alpha",
+	"Intended Audience :: Developers",
+	"Intended Audience :: Science/Research",
+	"License :: OSI Approved :: Apache Software License",
+	"Programming Language :: Rust",
+	"Programming Language :: C",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Programming Language :: Python :: 3.13",
+	"Programming Language :: Python :: 3.14",
+	"Topic :: Scientific/Engineering :: Quantum Computing",
+	"Typing :: Typed",
+]
+
+[project.optional-dependencies]
+qiskit = ["qiskit>=1.4,<3.0", "numpy>=1.26,<3.0"]
+
+[build-system]
+requires = ["setuptools>=76"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+qblaze = ["py.typed"]
+
+[tool.setuptools.dynamic]
+version = { attr = "build_info.version" }
+
+[tool.cibuildwheel]
+# i686-unknown-linux-musl has no rust toolchain
+skip = ["*-musllinux_i686"]
+
+[tool.cibuildwheel.container-engine]
+name = "podman"
+disable-host-mount = true
+create-args = ["--volume=qblaze-ci-cargo:/tmp/cargo/registry", "--volume=qblaze-ci-rustup:/tmp/rustup"]
+
+[tool.cibuildwheel.linux]
+before-all = "rm -rf /tmp/rustup/settings.toml /tmp/rustup/tmp && curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
+
+[tool.cibuildwheel.linux.environment]
+BUILD_WERROR = "1"
+CARGO_HOME = "/tmp/cargo"
+RUSTUP_HOME = "/tmp/rustup"
+PATH = "/tmp/cargo/bin:$PATH"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+	"--verbose",
+	"--import-mode=importlib",
+]
+testpaths = [
+	"tests",
+	"python/qblaze",
+]

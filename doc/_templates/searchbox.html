@@ -1,0 +1,14 @@
+<nav class="created-by">
+	By <a href="https://insait.ai/">INSAIT</a> and <a href="https://www.sri.inf.ethz.ch/">ETH Zurich</a>
+</nav>
+
+{# Copied from `sphinx_rtd_theme/searchbox.html` #}
+{%- if 'singlehtml' not in builder %}
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="{{ pathto('search') }}" method="get">
+    <input type="text" name="q" placeholder="{{ _('Search docs') }}" aria-label="{{ _('Search docs') }}" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+{%- endif %}

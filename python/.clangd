@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: ['-Wall', '-Wextra', '-I/usr/include/python3.13', '-I../include']

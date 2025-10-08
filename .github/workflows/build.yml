@@ -1,0 +1,160 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      py_doc_deps:
+        type: string
+        required: true
+        default: build==1.3.0 setuptools==80.9.0 sphinx==8.2.3 sphinx-multiversion==0.2.4 sphinx-rtd-theme==3.0.2 sphinx-inline-tabs==2023.4.21 sphinx-c-autodoc==1.5.0 clang==18.1.8
+      py_cibw_deps:
+        type: string
+        required: true
+        default: cibuildwheel==3.2.0
+      py_test_deps:
+        type: string
+        required: true
+        default: --only-binary=numpy,scipy,qiskit,qiskit-aer pytest numpy==2.3.3 scipy==1.16.2 qiskit==2.2.0 qiskit-aer==0.17.2
+
+jobs:
+  rust:
+    name: Rust ${{ matrix.toolchain }} tests
+    strategy:
+      matrix:
+        toolchain: ['1.82.0', stable, nightly]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Rust
+        run: |
+          rustup set profile minimal
+          rustup update ${{ matrix.toolchain }}
+          rustup default ${{ matrix.toolchain }}
+      - uses: actions/checkout@v4
+
+      - name: Build crate
+        run: cargo package
+      - name: Upload crate
+        if: ${{ matrix.toolchain == 'stable' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-crate
+          path: target/package/*.crate
+
+      - name: Build documentation
+        run: cargo doc --no-deps
+      - name: Upload documentation
+        if: ${{ matrix.toolchain == 'stable' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-doc
+          path: target/doc
+
+      - name: Run unit tests
+        run: cargo test --verbose
+
+  python_sdist:
+    name: Python sdist and documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Rust
+        run: |
+          rustup set profile minimal
+          rustup update stable
+          rustup default stable
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install libclang
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libclang-18-dev
+
+      - run: pip install ${{ inputs.py_doc_deps }}
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        run: python -Pm build -s
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-sdist
+          path: dist/*.tar.gz
+
+      - name: Build documentation
+        run: make -C doc
+        env:
+          QBLAZE_SPHINX_AUTODOC_CLANG_LIBDIR: '/usr/lib/llvm-18/lib'
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc
+          path: doc/_build/html/
+
+  python_wheels:
+    name: Python wheels on ${{ matrix.os }}
+    needs: python_sdist
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-13, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: pip install ${{ inputs.py_cibw_deps }}
+      - uses: actions/checkout@v4
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: python-sdist
+          path: src
+
+      - name: Build wheels
+        run: cibuildwheel --output-dir=dist src/*.tar.gz
+        shell: bash
+        env:
+          # the action runner doesn't have Podman installed
+          CIBW_CONTAINER_ENGINE: "docker; disable_host_mount: true"
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.os }}
+          path: dist/*.whl
+
+  python_test:
+    name: Run Python ${{ matrix.python }} tests on ${{ matrix.os }}
+    needs: python_wheels
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-13, macos-14]
+        # We need pre-built wheels to be available.
+        python: ['3.11', '3.12', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/checkout@v4
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.os }}
+          path: dist
+
+      - name: Prepare environment
+        run: |
+          pip install --only-binary=qblaze --no-index --find-links=dist qblaze
+          pip install ${{ inputs.py_test_deps }}
+
+      - name: Run tests
+        run: pytest
+
+      - name: Run random circuits
+        run: python tests/rand-circuit.py 20

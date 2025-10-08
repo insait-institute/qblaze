@@ -1,0 +1,48 @@
+[package]
+name = "qblaze"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/insait-institute/qblaze"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["capi", "threading", "config_linux", "mem_mmap", "sync_futex", "perf"]
+capi = ["dep:libc"]
+threading = []
+config_linux = ["dep:libc"]
+mem_mmap = ["dep:libc"]
+mem_release = []
+sync_spin = []
+sync_futex = ["dep:libc"]
+perf = []
+trace_run = []
+trace_match = []
+
+[dependencies]
+libc = { version = "0.2", optional = true }
+
+[package.metadata.capi.header]
+enabled = true
+subdirectory = false
+# cbindgen can't be told to only look at `crate::capi`.
+generation = false
+
+[package.metadata.capi.install.include]
+asset = [{from="include/*.h", to=""}]
+
+[package.metadata.capi.library]
+version = "0.1.0"
+version_suffix_components = 1
+
+[profile.dev]
+opt-level = 2
+lto = false
+panic = "abort"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
