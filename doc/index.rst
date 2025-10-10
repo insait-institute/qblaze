@@ -67,6 +67,11 @@ Many simulators performed better,
 but sadly we could not evaluate GraFeyn
 because it does not support simulating quantum measurements.
 
+We also compared qblaze to what we believe is the largest reported number factored to date with Shor’s algorithm --
+a 39 bit number (549 755 813 701) factored using a specialized (for Shor's algorithm) emulator,
+called `shorgpu <https://jugit.fz-juelich.de/qip/shorgpu>_`.
+Now qblaze matches this number, except that shorgpu used 2048 GPUs, while qblaze only uses 2 CPUs (with 90 cores each).
+
 .. raw:: html
    :file: plots/fig6.html.frag
 
@@ -142,8 +147,16 @@ qblaze comes with many more optimizations detailed in the paper.
 Authors
 =======
 
-| Hristo Venev, `INSAIT <https://insait.ai/>`_
-| Dimitar Dimitrov, `INSAIT <https://insait.ai/>`_
-| Timon Gehr, `ETH Zurich <https://www.sri.inf.ethz.ch/>`_
-| Martin Vechev, `ETH Zurich <https://www.sri.inf.ethz.ch/>`_ and `INSAIT <https://insait.ai/>`_
+| `Hristo Venev <https://insait.ai/hristo-venev/>`_, `INSAIT <https://insait.ai/>`_
+| `Dimitar Dimitrov <https://insait.ai/dr-dimitar-dimitrov/>`_, `INSAIT <https://insait.ai/>`_
+| `Timon Gehr <https://www.sri.inf.ethz.ch/people/timon>`_, `ETH Zurich <https://www.sri.inf.ethz.ch/>`_
+| `Martin Vechev <https://www.sri.inf.ethz.ch/people/martin>`_, `ETH Zurich <https://www.sri.inf.ethz.ch/>`_ and `INSAIT <https://insait.ai/>`_
 | Thien Udomsrirungruang, `INSAIT <https://insait.ai/>`_ (SURF internship)
+
+
+.. meta::
+   :og:url: https://qblaze.org
+   :og:type: website
+   :og:title: qblaze
+   :og:description: State-of-the-art quantum simulator
+   :og:image: _static/preview.png
