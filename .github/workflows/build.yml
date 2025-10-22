@@ -11,10 +11,6 @@ on:
         type: string
         required: true
         default: cibuildwheel==3.2.0
-      py_test_deps:
-        type: string
-        required: true
-        default: --only-binary=numpy,scipy,qiskit,qiskit-aer pytest numpy==2.3.3 scipy==1.16.2 qiskit==2.2.0 qiskit-aer==0.17.2
 
 jobs:
   rust:
@@ -98,7 +94,7 @@ jobs:
     needs: python_sdist
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-13, macos-14]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm, macos-13, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Python
@@ -132,9 +128,8 @@ jobs:
     needs: python_wheels
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-13, macos-14]
-        # We need pre-built wheels to be available.
-        python: ['3.11', '3.12', '3.13']
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, windows-11-arm, macos-13, macos-14]
+        python: ['3.11', '3.12', '3.13', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/setup-python@v5
@@ -151,7 +146,38 @@ jobs:
       - name: Prepare environment
         run: |
           pip install --only-binary=qblaze --no-index --find-links=dist qblaze
-          pip install ${{ inputs.py_test_deps }}
+          pip install --only-binary=numpy pytest numpy==2.3.4
+
+      - name: Run tests
+        run: pytest --ignore tests/test_qiskit.py --ignore python/qblaze/qiskit.py
+
+  qiskit_test:
+    name: Run Qiskit ${{ matrix.qiskit }} tests on ${{ matrix.os }}
+    needs: python_wheels
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-13, macos-14]
+        # Qiskit binaries are not available for Windows on ARM
+        # Qiskit Aer binaries are not available for Python 3.14
+        python: ['3.11', '3.13']
+        qiskit: ['1.4.5', '2.2.1']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/checkout@v4
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.os }}
+          path: dist
+
+      - name: Prepare environment
+        run: |
+          pip install --only-binary=qblaze --no-index --find-links=dist qblaze
+          pip install --only-binary=numpy,scipy,qiskit,qiskit-aer pytest numpy==2.3.4 scipy==1.16.2 qiskit==${{ matrix.qiskit }} qiskit-aer==0.17.2
 
       - name: Run tests
         run: pytest
