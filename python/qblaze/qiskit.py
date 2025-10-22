@@ -716,5 +716,13 @@ class Job(qiskit.providers.JobV1):
                     **res_data,
                 ),
                 seed = self.__options.get('seed_simulator'),
+                # Try to imitate the header Qiskit Aer returns.
+                header = {
+                    'n_qubits': qc.num_qubits,
+                    'qreg_sizes': [[qreg.name, qreg.size] for qreg in qc.qregs],
+                    'memory_slots': qc.num_clbits,
+                    'creg_sizes': [[creg.name, creg.size] for creg in qc.cregs],
+                    'name': qc.name,
+                }
             ))
         self.__result = res
