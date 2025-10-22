@@ -62,7 +62,7 @@ class _Dispatcher(dict[type, _Handler[qiskit.circuit.Operation]]):
 class _Context:
     __slots__ = ('rng', 'sv', 'sim', 'clbits', 'force_clbits', 'respect_barriers')
     rng: random.Random
-    sv: list[numpy.typing.NDArray[numpy.complex128]]
+    sv: list[qiskit.quantum_info.Statevector]
     sim: Simulator
     clbits: dict[qiskit.circuit.Clbit, bool]
     force_clbits: dict[qiskit.circuit.Clbit, bool]
@@ -70,7 +70,7 @@ class _Context:
     _CONTROLLED = _Dispatcher()
     _UNCONTROLLED = _Dispatcher()
 
-    def __init__(self, /, rng: random.Random, sv: list[numpy.typing.NDArray[numpy.complex128]], sim: Simulator, force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
+    def __init__(self, /, rng: random.Random, sv: list[qiskit.quantum_info.Statevector], sim: Simulator, force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
         self.rng = rng
         self.sv = sv
         self.sim = sim
@@ -423,9 +423,6 @@ class _Context:
     @_UNCONTROLLED.register(qiskit.circuit.Instruction)
     def handle_generic_uncontrolled(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int]) -> None:
         if type(op).__name__ == 'SaveStatevector' and type(op).__module__ == 'qiskit_aer.library.save_instructions.save_statevector':
-            # pershot: bool = op._subtype == 'list'
-            # if not pershot:
-            #     self.sv.clear()
             nq = max(qubits) // _QUBIT_INDEX_SCALE + 1
             sv = numpy.zeros(2**nq, numpy.complex128)
             if _QUBIT_INDEX_SCALE > 1:
@@ -435,7 +432,7 @@ class _Context:
             if _QUBIT_INDEX_SCALE > 1:
                 for i in reversed(range(1, nq)):
                     self.sim.swap(i, _QUBIT_INDEX_SCALE * i)
-            self.sv.append(sv)
+            self.sv.append((op, sv))
             return
 
         match op:
@@ -486,6 +483,9 @@ class _Context:
         raise NotImplementedError(op)
 
 
+_SaveData: typing.TypeAlias = tuple[qiskit.circuit.Instruction, numpy.typing.NDArray[numpy.complex128]]
+
+
 def run_circuit(
     sim: Simulator, qc: qiskit.QuantumCircuit,
     /,
@@ -533,12 +533,24 @@ def run_circuit(
     [(1+0j), 0j, 0j, 0j]
     """
 
+    (clbits, saved) = _run_circuit(sim, qc, rng=rng, force_clbits=force_clbits, respect_barriers=respect_barriers)
+    return (clbits, [sv for inst,sv in saved])
+
+
+def _run_circuit(
+    sim: Simulator, qc: qiskit.QuantumCircuit,
+    /,
+    rng: random.Random | None = None,
+    *,
+    force_clbits: dict[qiskit.circuit.Clbit, bool] = {},
+    respect_barriers: bool = False,
+) -> tuple[dict[qiskit.circuit.Clbit, bool], list[_SaveData]]:
     if rng is None:
         rng = random.Random()
 
-    sv: list[numpy.typing.NDArray[numpy.complex128]] = []
+    saved: list[_SaveData] = []
     clbits = {c: False for c in qc.clbits}
-    ctx = _Context(rng, sv, sim, force_clbits, clbits, respect_barriers)
+    ctx = _Context(rng, saved, sim, force_clbits, clbits, respect_barriers)
 
     qubit_map = {q: _QUBIT_INDEX_SCALE * i for i, q in enumerate(qc.qubits)}
 
@@ -552,7 +564,7 @@ def run_circuit(
             continue
         disp[type(op)](ctx, ctl, op, inst.clbits, [qubit_map[q] for q in inst.qubits])
 
-    return (clbits, sv)
+    return (clbits, saved)
 
 
 class Backend(qiskit.providers.BackendV2):
@@ -674,24 +686,34 @@ class Job(qiskit.providers.JobV1):
         res = []
         for qc in self.__circuits:
             counts: dict[str, int] = {}
-            sv: list[numpy.typing.NDArray[numpy.complex128]] = []
+            res_data: dict[str, typing.Any] = {}
+
             for shot in range(shots):
                 sim = Simulator(**sim_options)
-                run_clbits, run_sv = run_circuit(
+                run_clbits, run_sv = _run_circuit(
                     sim, qc,
                     rng = random.Random(seed + shot) if seed is not None else None,
                     **run_options,
                 )
-                sv.extend(run_sv)
+
                 m = sum(1 << i for i, clbit in enumerate(qc.clbits) if run_clbits[clbit])
                 key = f'{m:#x}'
                 counts[key] = counts.get(key, 0) + 1
+
+                for (op, sv) in run_sv:
+                    label: str = op._label
+                    pershot: bool = op._subtype == 'list'
+                    if pershot:
+                        res_data.setdefault(label, []).append(qiskit.quantum_info.Statevector(sv))
+                    else:
+                        res_data[label] = qiskit.quantum_info.Statevector(sv)
+
             res.append(qiskit.result.models.ExperimentResult(
                 shots = shots,
                 success = True,
                 data = qiskit.result.models.ExperimentResultData(
                     counts = counts,
-                    statevector = sv,
+                    **res_data,
                 ),
                 seed = self.__options.get('seed_simulator'),
             ))
