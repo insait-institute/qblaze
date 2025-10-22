@@ -6,6 +6,7 @@ import math
 
 import qblaze.qiskit
 import qiskit
+import qiskit_aer
 import numpy
 
 
@@ -187,3 +188,46 @@ def test_ifelse():
     sim.copy_amplitudes(sv)
 
     assert numpy.abs(sv).argmax() == 9
+
+
+def test_save_statevector():
+    q = qiskit.QuantumRegister(2)
+    c = qiskit.ClassicalRegister(2)
+
+    qc = qiskit.QuantumCircuit(q, c)
+    qc.h(q[0])
+    qc.save_statevector()
+    qc.cx(q[0], q[1])
+    qc.save_statevector(label='other_statevector', pershot=True)
+    qc.measure(q, c)
+
+    be = qblaze.qiskit.Backend()
+    res = be.run(qc, shots=100).result()
+    assert isinstance(res, qiskit.result.Result)
+    assert len(res.results) == 1
+
+    [exp_res] = res.results
+    assert isinstance(exp_res, qiskit.result.models.ExperimentResult)
+    assert isinstance(exp_res.data, qiskit.result.models.ExperimentResultData)
+
+    counts = exp_res.data.counts
+    assert sorted(counts.keys()) == ['0x0', '0x3']
+    assert sum(counts.values()) == 100
+
+    sv1 = exp_res.data.statevector
+    assert isinstance(sv1, qiskit.quantum_info.Statevector)
+
+    assert abs(abs(sv1[0]) - 2**-0.5) < 1e-6
+    assert abs(abs(sv1[1]) - 2**-0.5) < 1e-6
+    assert abs(abs(sv1[2])) < 1e-6
+    assert abs(abs(sv1[3])) < 1e-6
+
+    sv2 = exp_res.data.other_statevector
+    assert isinstance(sv2, list)
+    assert len(sv2) == 100
+    for sv in sv2:
+        assert isinstance(sv, qiskit.quantum_info.Statevector)
+        assert abs(abs(sv[0]) - 2**-0.5) < 1e-6
+        assert abs(abs(sv[1])) < 1e-6
+        assert abs(abs(sv[2])) < 1e-6
+        assert abs(abs(sv[3]) - 2**-0.5) < 1e-6
