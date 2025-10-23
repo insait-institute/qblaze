@@ -5,6 +5,7 @@ qblaze
 ======
 
 .. automodule:: qblaze
+   :special-members: __iter__
 
 
 qblaze.qiskit
