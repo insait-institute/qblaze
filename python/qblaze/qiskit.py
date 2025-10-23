@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
-import array
-import collections
 import math
 import random
 import typing
 import uuid
 
 import qiskit
+import qiskit.synthesis
 import numpy
 
 from . import Simulator, __version__
@@ -59,10 +58,13 @@ class _Dispatcher(dict[type, _Handler[qiskit.circuit.Operation]]):
         return reg # type: ignore
 
 
+_SaveData: typing.TypeAlias = tuple[qiskit.circuit.Instruction, numpy.typing.NDArray[numpy.complex128]]
+
+
 class _Context:
     __slots__ = ('rng', 'sv', 'sim', 'clbits', 'force_clbits', 'respect_barriers')
     rng: random.Random
-    sv: list[qiskit.quantum_info.Statevector]
+    sv: list[_SaveData]
     sim: Simulator
     clbits: dict[qiskit.circuit.Clbit, bool]
     force_clbits: dict[qiskit.circuit.Clbit, bool]
@@ -70,7 +72,7 @@ class _Context:
     _CONTROLLED = _Dispatcher()
     _UNCONTROLLED = _Dispatcher()
 
-    def __init__(self, /, rng: random.Random, sv: list[qiskit.quantum_info.Statevector], sim: Simulator, force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
+    def __init__(self, /, rng: random.Random, sv: list[_SaveData], sim: Simulator, force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
         self.rng = rng
         self.sv = sv
         self.sim = sim
@@ -367,7 +369,7 @@ class _Context:
     @_UNCONTROLLED.register(qiskit.circuit.library.CU1Gate)
     @_CONTROLLED.register(qiskit.circuit.library.CPhaseGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CPhaseGate)
-    def handle_cu1(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int]) -> None:
+    def handle_cu1(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.ControlledGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int]) -> None:
         assert not clbits
         [q0, q1] = qubits
         [phase] = op.params
@@ -481,9 +483,6 @@ class _Context:
         if (sub := op.definition) is not None:
             return self.subcircuit(ctl, sub, clbits, qubits)
         raise NotImplementedError(op)
-
-
-_SaveData: typing.TypeAlias = tuple[qiskit.circuit.Instruction, numpy.typing.NDArray[numpy.complex128]]
 
 
 def run_circuit(
