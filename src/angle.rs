@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::{f64, fmt, ops};
 
+/// An angle in the range (-&pi;, &pi;].
 #[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct Angle(u64);
 
-/// An angle in the range (-&pi;, &pi;].
 impl Angle {
     pub const ZERO: Angle = Angle(0);
     pub const PI_1_4: Angle = Angle(0x2000000000000000); // T
@@ -35,7 +35,7 @@ impl Angle {
         let base = 2.0f64.powi(64);
         v = (base * v.fract()).round_ties_even();
         assert!(0.0 <= v && v <= base);
-        // `(base + v) also has a zero mantissa`
+        // `base + v` also has a zero mantissa
         let r = Angle((base + v).to_bits().wrapping_shl(64 - (f64::MANTISSA_DIGITS - 1)));
         if neg { -r } else { r }
     }
