@@ -69,7 +69,7 @@ because it does not support simulating quantum measurements.
 
 We also compared qblaze to what we believe is the largest reported number factored to date with Shor’s algorithm --
 a 39 bit number (549 755 813 701) factored using a specialized (for Shor's algorithm) emulator,
-called `shorgpu <https://jugit.fz-juelich.de/qip/shorgpu>_`.
+called `shorgpu <https://jugit.fz-juelich.de/qip/shorgpu>`_.
 Now qblaze matches this number, except that shorgpu used 2048 GPUs, while qblaze only uses 2 CPUs (with 90 cores each).
 
 .. raw:: html
