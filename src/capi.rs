@@ -152,6 +152,12 @@ pub unsafe extern "C" fn qblaze_del(sim: *mut QBlazeSimulator) {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn qblaze_reset_state(sim: *mut QBlazeSimulator) {
+    let sim = unsafe { &mut *(sim as *mut crate::Simulator) };
+    sim.reset_state();
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn qblaze_clone(sim: *mut QBlazeSimulator) -> *mut QBlazeSimulator {
     let sim = unsafe { &mut *(sim as *mut crate::Simulator) };
     sim.flush();

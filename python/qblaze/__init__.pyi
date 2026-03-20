@@ -70,6 +70,19 @@ class Simulator:
             3968
         """
 
+    def reset_state(self, /) -> None:
+        """Reset the simulator back to the initial state.
+
+        Example:
+
+            >>> sim.x(0)
+            >>> sim.measure(0)
+            True
+            >>> sim.reset_state()
+            >>> sim.measure(0)
+            False
+        """
+
     def flush(self, /) -> None:
         """Apply all gates in the gate queue.
 

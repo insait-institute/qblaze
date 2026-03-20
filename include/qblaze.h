@@ -151,6 +151,11 @@ QBlazeSimulator *qblaze_new(const struct QBlazeConfig *opts);
 void qblaze_del(QBlazeSimulator *sim);
 
 /**
+ * Reset the simulator back to the initial state.
+ */
+void qblaze_reset_state(QBlazeSimulator *sim);
+
+/**
  * Clone a simulator instance.
  *
  * On error, return NULL, leaving the state of the original simulator is undefined.

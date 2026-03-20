@@ -9,6 +9,7 @@ pub(crate) struct Perf {
 
 pub(crate) struct Context {
     pub pool: threading::Pool,
+    pub init_max_qubit: Qubit,
     pub chunk_size: usize,
     pub multithreading_threshold: usize,
     pub work_item_min_size: usize,
@@ -20,6 +21,7 @@ impl Context {
     pub fn new(cfg: &Config) -> Self {
         Self {
             pool: threading::Pool::new(cfg.threads),
+            init_max_qubit: cfg.max_qubit,
             chunk_size: cfg.chunk_size,
             multithreading_threshold: cfg.multithreading_threshold,
             work_item_min_size: cfg.work_item_min_size,

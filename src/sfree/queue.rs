@@ -86,6 +86,13 @@ impl Queue {
     }
 
     #[inline]
+    pub fn clear(&mut self) {
+        self.reads.clear();
+        self.writes.clear();
+        self.ops.clear();
+    }
+
+    #[inline]
     pub fn compile<'a, const N: usize>(&mut self, alloc: &'a arena::Arena, st: &mut Stat, prec: u8) -> Option<Compiled<'a, N>> {
         self.reads.clear();
         self.writes.clear();

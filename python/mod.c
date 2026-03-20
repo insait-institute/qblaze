@@ -370,6 +370,15 @@ static void Simulator_dealloc(PyObject *o) {
 	PyObject_Del(o);
 }
 
+static PyObject *Simulator_reset_state(PyObject *o, PyObject *arg) {
+	SimulatorObject *self = (SimulatorObject*)o;
+	(void)arg;
+	QBlazeSimulator *sim = Simulator_acquire(self);
+	qblaze_reset_state(sim);
+	Simulator_release(self, sim);
+	Py_RETURN_NONE;
+}
+
 static PyObject *Simulator_clone(PyObject *o, PyObject *arg) {
 	SimulatorObject *self = (SimulatorObject*)o;
 	(void)arg;
@@ -903,6 +912,7 @@ static PyObject *Simulator_copy_amplitudes(PyObject *o, PyObject *arg) {
 static PyMethodDef Simulator_methods[] = {
 	{"max_qubit_count", &Simulator_max_qubit_count, METH_CLASS | METH_NOARGS, NULL},
 
+	meth_NOARGS(reset_state),
 	meth_NOARGS(flush),
 	meth_NOARGS(dump),
 	meth_NOARGS(clone),

@@ -47,8 +47,14 @@ impl Simulator {
         assert!(cfg.threads > 0);
         assert!(cfg.chunk_size > 0);
         let ctx = Context::new(&cfg);
-        let state = statevector::new(cfg.max_qubit);
+        let state = statevector::new(ctx.init_max_qubit);
         Self::new_with_state(ctx, state)
+    }
+
+    pub fn reset_state(&mut self) {
+        self.state = statevector::new(self.ctx.init_max_qubit);
+        self.sfree_queue.clear();
+        self.qubits.clear();
     }
 
     /// Clone a simulator instance. The instance must be flushed.

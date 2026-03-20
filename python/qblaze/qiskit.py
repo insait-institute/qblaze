@@ -688,13 +688,14 @@ class Job(qiskit.providers.JobV1):
             memory: list[str] = []
             res_data: dict[str, typing.Any] = {}
 
+            sim = Simulator(**sim_options)
             for shot in range(shots):
-                sim = Simulator(**sim_options)
                 run_clbits, run_sv = _run_circuit(
                     sim, qc,
                     rng = random.Random(seed + shot) if seed is not None else None,
                     **run_options,
                 )
+                sim.reset_state()
 
                 m = sum(1 << i for i, clbit in enumerate(qc.clbits) if run_clbits[clbit])
                 key = f'{m:#x}'
