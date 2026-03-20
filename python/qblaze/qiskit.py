@@ -679,12 +679,13 @@ class Job(qiskit.providers.JobV1):
         sim_options = {
             opt: val
             for opt, val in self.__options.items()
-            if opt not in {'seed_simulator', 'shots', 'force_clbits', 'respect_barriers'}
+            if opt not in {'seed_simulator', 'shots', 'force_clbits', 'respect_barriers', 'memory'}
         }
 
         res = []
         for qc in self.__circuits:
             counts: dict[str, int] = {}
+            memory: list[str] = []
             res_data: dict[str, typing.Any] = {}
 
             for shot in range(shots):
@@ -698,6 +699,7 @@ class Job(qiskit.providers.JobV1):
                 m = sum(1 << i for i, clbit in enumerate(qc.clbits) if run_clbits[clbit])
                 key = f'{m:#x}'
                 counts[key] = counts.get(key, 0) + 1
+                memory.append(key)
 
                 for (op, sv) in run_sv:
                     label: str = op._label
@@ -712,6 +714,7 @@ class Job(qiskit.providers.JobV1):
                 success = True,
                 data = qiskit.result.models.ExperimentResultData(
                     counts = counts,
+                    memory = memory,
                     **res_data,
                 ),
                 seed = self.__options.get('seed_simulator'),
