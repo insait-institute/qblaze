@@ -20,10 +20,6 @@ _zxz_decomposer = qiskit.synthesis.OneQubitEulerDecomposer(basis='ZXZ')
 _QISKIT_1: typing.Final[bool] = qiskit.__version__.startswith('1.')
 
 
-# For testing circuits with high qubit indices.
-_QUBIT_INDEX_SCALE: typing.Final[int] = 1
-
-
 PI: typing.Final[float] = math.pi
 MINUS_PI: typing.Final[float] = -PI
 TAU: typing.Final[float] = 2 * PI
@@ -34,7 +30,8 @@ MINUS_QUARTER_PI: typing.Final[float] = -QUARTER_PI
 
 
 _T = typing.TypeVar('_T', bound=qiskit.circuit.Operation)
-_Handler: typing.TypeAlias = typing.Callable[['_Context', list[tuple[int, bool]], _T, list[qiskit.circuit.Clbit], list[int]], None]
+_Handler: typing.TypeAlias = typing.Callable[['_Context', Simulator, list[tuple[int, bool]], _T, list[qiskit.circuit.Clbit], list[int]], None]
+_SaveData: typing.TypeAlias = tuple[qiskit.circuit.Instruction, numpy.typing.NDArray[numpy.complex128]]
 
 
 class _Dispatcher(dict[type, _Handler[qiskit.circuit.Operation]]):
@@ -58,24 +55,21 @@ class _Dispatcher(dict[type, _Handler[qiskit.circuit.Operation]]):
         return reg # type: ignore
 
 
-_SaveData: typing.TypeAlias = tuple[qiskit.circuit.Instruction, numpy.typing.NDArray[numpy.complex128]]
+_CONTROLLED = _Dispatcher()
+_UNCONTROLLED = _Dispatcher()
 
 
 class _Context:
-    __slots__ = ('rng', 'sv', 'sim', 'clbits', 'force_clbits', 'respect_barriers')
+    __slots__ = ('rng', 'sv', 'clbits', 'force_clbits', 'respect_barriers')
     rng: random.Random
     sv: list[_SaveData]
-    sim: Simulator
     clbits: dict[qiskit.circuit.Clbit, bool]
     force_clbits: dict[qiskit.circuit.Clbit, bool]
     respect_barriers: bool
-    _CONTROLLED = _Dispatcher()
-    _UNCONTROLLED = _Dispatcher()
 
-    def __init__(self, /, rng: random.Random, sv: list[_SaveData], sim: Simulator, force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
+    def __init__(self, /, rng: random.Random, sv: list[_SaveData], force_clbits: dict[qiskit.circuit.Clbit, bool], clbits: dict[qiskit.circuit.Clbit, bool], respect_barriers: bool) -> None:
         self.rng = rng
         self.sv = sv
-        self.sim = sim
         self.force_clbits = force_clbits
         self.clbits = clbits
         self.respect_barriers = respect_barriers
@@ -103,7 +97,7 @@ class _Context:
             case _:
                 raise TypeError(f'Bad condition: {cond!r}')
 
-    def subcircuit(self, ctl: list[tuple[int, bool]], qc: qiskit.QuantumCircuit, clbits: list[qiskit.circuit.Clbit], qubits: list[int]) -> None:
+    def subcircuit(self, sim: Simulator, ctl: list[tuple[int, bool]], qc: qiskit.QuantumCircuit, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         sub_force_clbits = {}
         subclbits = {}
 
@@ -116,17 +110,17 @@ class _Context:
             else:
                 sub_force_clbits[inner_clbit] = val
 
-        subctx = _Context(self.rng, self.sv, self.sim, sub_force_clbits, subclbits, self.respect_barriers)
+        subctx = _Context(self.rng, self.sv, sub_force_clbits, subclbits, self.respect_barriers)
         qubit_map = {inner_qubit: outer_qubit for (outer_qubit, inner_qubit) in zip(qubits, qc.qubits, strict=True)}
 
-        disp = self._CONTROLLED if ctl else self._UNCONTROLLED
+        disp = _CONTROLLED if ctl else _UNCONTROLLED
         for inst in qc.data:
             op = inst.operation
             # Use `_condition` to silence this warning:
             #   DeprecationWarning: The property ``qiskit.circuit.instruction.Instruction.condition`` is deprecated as of qiskit 1.3.0.
             if _QISKIT_1 and isinstance(op, qiskit.circuit.Instruction) and not isinstance(op, qiskit.circuit.ControlFlowOp) and (cond := op._condition) is not None and not subctx.eval_cond(cond):
                 continue
-            disp[type(op)](subctx, ctl, op, inst.clbits, [qubit_map[q] for q in inst.qubits])
+            disp[type(op)](subctx, sim, ctl, op, inst.clbits, [qubit_map[q] for q in inst.qubits])
 
         for (outer_clbit, inner_clbit) in zip(clbits, qc.clbits, strict=True):
             self.clbits[outer_clbit] = subclbits[inner_clbit]
@@ -136,312 +130,299 @@ class _Context:
     @_UNCONTROLLED.register(qiskit.circuit.library.GlobalPhaseGate)
     @_CONTROLLED.register(qiskit.circuit.library.IGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.IGate)
-    def handle_nop(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Operation, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_nop(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Operation, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         pass
 
     @_CONTROLLED.register(qiskit.circuit.Barrier)
     @_UNCONTROLLED.register(qiskit.circuit.Barrier)
-    def handle_barrier(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Barrier, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_barrier(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Barrier, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         if not self.respect_barriers:
             return
-        return self.sim.flush()
+        return sim.flush()
 
     @_CONTROLLED.register(qiskit.circuit.IfElseOp)
     @_UNCONTROLLED.register(qiskit.circuit.IfElseOp)
-    def handle_ifelse(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.IfElseOp, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_ifelse(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.IfElseOp, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         sub = op.params[not self.eval_cond(op.condition)]
         if sub is None:
             return
-        return self.subcircuit(ctl, sub, clbits, qubits)
+        return self.subcircuit(sim, ctl, sub, clbits, qubits)
 
     @_UNCONTROLLED.register(qiskit.circuit.Measure)
-    def handle_measure(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Measure, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
-        sim = self.sim
+    def handle_measure(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Measure, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         for (q, clbit) in zip(qubits, clbits, strict=True):
             try:
                 want = self.force_clbits[clbit]
             except KeyError:
-                want = None
-                rnd = self.rng.getrandbits(64)
+                pass
             else:
-                rnd = 2**64-1 if want else 0
-            self.clbits[clbit] = got = sim.measure(q, rnd)
-            if want is not None:
+                self.clbits[clbit] = got = sim.measure(q, 2**64-1 if want else 0)
                 assert got == want
+                continue
+            self.clbits[clbit] = sim.measure(q, self.rng.getrandbits(64))
 
     @_UNCONTROLLED.register(qiskit.circuit.Reset)
-    def handle_reset(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Reset, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_reset(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Reset, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
-        sim = self.sim
         for q in qubits:
             if sim.measure(q, self.rng.getrandbits(64)):
                 sim.x(q)
 
     @_CONTROLLED.register(qiskit.circuit.ControlledGate)
     @_UNCONTROLLED.register(qiskit.circuit.ControlledGate)
-    def handle_ctl(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.ControlledGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_ctl(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.ControlledGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         ctl_qubits = qubits[:op.num_ctrl_qubits]
         sub_qubits = qubits[op.num_ctrl_qubits:]
         sub_op = op.base_gate
         assert sub_op is not None
-        sub_ctl = [
+        return _CONTROLLED[type(sub_op)](self, sim, [
             *ctl,
             *((q, not not (op.ctrl_state & (1 << i))) for (i, q) in enumerate(ctl_qubits)),
-        ]
-        return self._CONTROLLED[type(sub_op)](self, sub_ctl, sub_op, clbits, sub_qubits)
+        ], sub_op, clbits, sub_qubits)
 
     @_CONTROLLED.register(qiskit.circuit.library.SwapGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.SwapGate)
-    def handle_swap(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SwapGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_swap(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SwapGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1] = qubits
-        return self.sim.mcswap(ctl, q0, q1)
+        return sim.mcswap(ctl, q0, q1)
 
     @_CONTROLLED.register(qiskit.circuit.library.CSwapGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CSwapGate)
-    def handle_cswap(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSwapGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_cswap(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSwapGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c, q0, q1] = qubits
-        return self.sim.mcswap([*ctl, (c, not not (op.ctrl_state & 1))], q0, q1)
+        return sim.mcswap([*ctl, (c, not not (op.ctrl_state & 1))], q0, q1)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.XGate)
-    def handle_uncontrolled_x(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_x(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.x(q)
+        return sim.x(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.XGate)
-    def handle_x(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_x(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcx(ctl, q)
+        return sim.mcx(ctl, q)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.CXGate)
-    def handle_uncontrolled_cx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_cx(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c, q] = qubits
-        if op.ctrl_state:
-            self.sim.cx(c, q)
-        else:
-            self.sim.mcx([(c, False)], q)
+        return sim.cx(c, q) if op.ctrl_state else sim.mcx([(c, False)], q)
 
     @_CONTROLLED.register(qiskit.circuit.library.CXGate)
-    def handle_cx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_cx(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c, q] = qubits
-        return self.sim.mcx([*ctl, (c, not not (op.ctrl_state & 1))], q)
+        return sim.mcx([*ctl, (c, not not (op.ctrl_state & 1))], q)
 
     @_CONTROLLED.register(qiskit.circuit.library.CCXGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CCXGate)
-    def handle_ccx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CCXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_ccx(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CCXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c1, c2, q] = qubits
-        return self.sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2))], q)
+        return sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2))], q)
 
     @_CONTROLLED.register(qiskit.circuit.library.C3XGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.C3XGate)
-    def handle_c3x(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.C3XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_c3x(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.C3XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c1, c2, c3, q] = qubits
-        return self.sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2)), (c3, not not (op.ctrl_state & 4))], q)
+        return sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2)), (c3, not not (op.ctrl_state & 4))], q)
 
     @_CONTROLLED.register(qiskit.circuit.library.C4XGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.C4XGate)
-    def handle_c4x(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.C4XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_c4x(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.C4XGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c1, c2, c3, c4, q] = qubits
-        return self.sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2)), (c3, not not (op.ctrl_state & 4)), (c4, not not (op.ctrl_state & 8))], q)
+        return sim.mcx([*ctl, (c1, not not (op.ctrl_state & 1)), (c2, not not (op.ctrl_state & 2)), (c3, not not (op.ctrl_state & 4)), (c4, not not (op.ctrl_state & 8))], q)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.ZGate)
-    def handle_uncontrolled_z(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.ZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_z(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.ZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.z(q)
+        return sim.z(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.ZGate)
-    def handle_z(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.ZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_z(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.ZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcphase([*ctl, (q, True)], PI)
+        return sim.mcphase([*ctl, (q, True)], PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.SGate)
-    def handle_uncontrolled_s(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_s(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.s(q)
+        return sim.s(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.SGate)
-    def handle_s(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_s(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcphase([*ctl, (q, True)], HALF_PI)
+        return sim.mcphase([*ctl, (q, True)], HALF_PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.SdgGate)
-    def handle_uncontrolled_sdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_sdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.sdg(q)
+        return sim.sdg(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.SdgGate)
-    def handle_sdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_sdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcphase([*ctl, (q, True)], MINUS_HALF_PI)
+        return sim.mcphase([*ctl, (q, True)], MINUS_HALF_PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.TGate)
-    def handle_uncontrolled_t(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_t(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.t(q)
+        return sim.t(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.TGate)
-    def handle_t(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_t(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcphase([*ctl, (q, True)], QUARTER_PI)
+        return sim.mcphase([*ctl, (q, True)], QUARTER_PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.TdgGate)
-    def handle_uncontrolled_tdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_tdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.tdg(q)
+        return sim.tdg(q)
 
     @_CONTROLLED.register(qiskit.circuit.library.TdgGate)
-    def handle_tdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_tdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.TdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.mcphase([*ctl, (q, True)], MINUS_QUARTER_PI)
+        return sim.mcphase([*ctl, (q, True)], MINUS_QUARTER_PI)
 
     @_CONTROLLED.register(qiskit.circuit.library.CZGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CZGate)
-    def handle_cz(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_cz(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1] = qubits
-        return self.sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], PI)
+        return sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], PI)
 
     @_CONTROLLED.register(qiskit.circuit.library.CSGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CSGate)
-    def handle_cs(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_cs(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1] = qubits
-        return self.sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], HALF_PI)
+        return sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], HALF_PI)
 
     @_CONTROLLED.register(qiskit.circuit.library.CSdgGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CSdgGate)
-    def handle_csdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_csdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CSdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1] = qubits
-        return self.sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], MINUS_HALF_PI)
+        return sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], MINUS_HALF_PI)
 
     @_CONTROLLED.register(qiskit.circuit.library.CCZGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CCZGate)
-    def handle_ccz(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CCZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_ccz(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CCZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1, q2] = qubits
-        return self.sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, not not (op.ctrl_state & 2)), (q2, True)], PI)
+        return sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, not not (op.ctrl_state & 2)), (q2, True)], PI)
 
     @_CONTROLLED.register(qiskit.circuit.library.GlobalPhaseGate)
-    def handle_gphase(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.GlobalPhaseGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_gphase(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.GlobalPhaseGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         assert not qubits
         [phase] = op.params
-        return self.sim.mcphase(ctl, self.eval_float(phase))
+        return sim.mcphase(ctl, self.eval_float(phase))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.U1Gate)
     @_UNCONTROLLED.register(qiskit.circuit.library.PhaseGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.RZGate)
-    def handle_uncontrolled_rz(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_uncontrolled_rz(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phase] = op.params
-        return self.sim.rz(q, self.eval_float(phase))
+        return sim.rz(q, self.eval_float(phase))
 
     @_CONTROLLED.register(qiskit.circuit.library.U1Gate)
     @_CONTROLLED.register(qiskit.circuit.library.PhaseGate)
-    def handle_u1(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_u1(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phase] = op.params
-        return self.sim.mcphase([*ctl, (q, True)], self.eval_float(phase))
+        return sim.mcphase([*ctl, (q, True)], self.eval_float(phase))
 
     @_CONTROLLED.register(qiskit.circuit.library.RZGate)
-    def handle_rz(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_rz(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RZGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phase] = op.params
         phi = self.eval_float(phase)
-        self.sim.mcphase(ctl, -phi / 2)
-        return self.sim.mcphase([*ctl, (q, True)], phi)
+        sim.mcphase(ctl, -phi / 2)
+        return sim.mcphase([*ctl, (q, True)], phi)
 
     @_CONTROLLED.register(qiskit.circuit.library.CU1Gate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CU1Gate)
     @_CONTROLLED.register(qiskit.circuit.library.CPhaseGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CPhaseGate)
-    def handle_cu1(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.ControlledGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_cu1(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.ControlledGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q0, q1] = qubits
         [phase] = op.params
-        return self.sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], self.eval_float(phase))
+        return sim.mcphase([*ctl, (q0, not not (op.ctrl_state & 1)), (q1, True)], self.eval_float(phase))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.RXGate)
-    def handle_rx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_rx(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phase] = op.params
-        return self.sim.rx(q, self.eval_float(phase))
+        return sim.rx(q, self.eval_float(phase))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.SXGate)
-    def handle_sx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_sx(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.rx(q, HALF_PI)
+        return sim.rx(q, HALF_PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.SXdgGate)
-    def handle_sxdg(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SXdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_sxdg(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.SXdgGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.rx(q, MINUS_HALF_PI)
+        return sim.rx(q, MINUS_HALF_PI)
 
     @_UNCONTROLLED.register(qiskit.circuit.library.RYGate)
-    def handle_ry(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RYGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_ry(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.RYGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phase] = op.params
-        return self.sim.ry(q, self.eval_float(phase))
+        return sim.ry(q, self.eval_float(phase))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.UGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.U3Gate)
-    def handle_u3(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_u3(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [theta, phi, lam] = op.params
-        return self.sim.u3(q, self.eval_float(theta), self.eval_float(phi), self.eval_float(lam))
+        return sim.u3(q, self.eval_float(theta), self.eval_float(phi), self.eval_float(lam))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.U2Gate)
-    def handle_u2(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.U2Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_u2(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.U2Gate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
         [phi, lam] = op.params
-        return self.sim.u3(q, HALF_PI, self.eval_float(phi), self.eval_float(lam))
+        return sim.u3(q, HALF_PI, self.eval_float(phi), self.eval_float(lam))
 
     @_UNCONTROLLED.register(qiskit.circuit.library.HGate)
-    def handle_h(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.HGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_h(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.HGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [q] = qubits
-        return self.sim.h(q)
+        return sim.h(q)
 
     @_UNCONTROLLED.register(qiskit.circuit.Instruction)
-    def handle_generic_uncontrolled(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_generic_uncontrolled(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         if type(op).__name__ == 'SaveStatevector' and type(op).__module__ == 'qiskit_aer.library.save_instructions.save_statevector':
-            nq = max(qubits) // _QUBIT_INDEX_SCALE + 1
+            nq = max(qubits) + 1
             sv = numpy.zeros(2**nq, numpy.complex128)
-            if _QUBIT_INDEX_SCALE > 1:
-                for i in range(1, nq):
-                    self.sim.swap(i, _QUBIT_INDEX_SCALE * i)
-            self.sim.copy_amplitudes(sv)
-            if _QUBIT_INDEX_SCALE > 1:
-                for i in reversed(range(1, nq)):
-                    self.sim.swap(i, _QUBIT_INDEX_SCALE * i)
+            sim.copy_amplitudes(sv)
             self.sv.append((op, sv))
             return
 
@@ -450,14 +431,14 @@ class _Context:
                 assert not clbits
                 [q] = qubits
                 (theta, phi, lam) = _zyz_decomposer.angles(op.to_matrix())
-                return self.sim.u3(q, theta, phi, lam)
+                return sim.u3(q, theta, phi, lam)
 
         if (sub := op.definition) is not None:
-            return self.subcircuit(ctl, sub, clbits, qubits)
+            return self.subcircuit(sim, ctl, sub, clbits, qubits)
         raise NotImplementedError(op)
 
     @_CONTROLLED.register(qiskit.circuit.Instruction)
-    def handle_generic_controlled(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+    def handle_generic_controlled(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         match op:
             case qiskit.circuit.Gate() if op.num_qubits == 1:
                 assert not clbits
@@ -466,7 +447,6 @@ class _Context:
                 # rz(lam); h; rz(theta); h; rz(phi)
                 (theta, phi, lam, corr) = _zxz_decomposer.angles_and_phase(op.to_matrix())
                 corr -= (theta + phi + lam) / 2
-                sim = self.sim
                 if abs(theta) < 1e-8:
                     sim.mcphase(subctl, lam + phi)
                 elif abs(theta - PI) < 1e-8 or abs(theta + PI) < 1e-8:
@@ -489,7 +469,7 @@ class _Context:
                 return
 
         if (sub := op.definition) is not None:
-            return self.subcircuit(ctl, sub, clbits, qubits)
+            return self.subcircuit(sim, ctl, sub, clbits, qubits)
         raise NotImplementedError(op)
 
 
@@ -504,7 +484,7 @@ def run_circuit(
     """Run a circuit on the given simulator.
 
     :code:`force_clbits` can be used to force the outcomes of measurements
-    associated with particular classical bits. Simulation will fail if a force
+    associated with particular classical bits. Simulation will fail if a forced
     outcome has zero (or very close to zero) probability.
 
     Returns :code:`(clbits, statevectors)`, where :code:`clbits` is the value of
@@ -554,19 +534,19 @@ def _run_circuit(
 ) -> tuple[dict[qiskit.circuit.Clbit, bool], list[_SaveData]]:
     saved: list[_SaveData] = []
     clbits = {c: False for c in qc.clbits}
-    ctx = _Context(rng, saved, sim, force_clbits, clbits, respect_barriers)
+    ctx = _Context(rng, saved, force_clbits, clbits, respect_barriers)
 
-    qubit_map = {q: _QUBIT_INDEX_SCALE * i for i, q in enumerate(qc.qubits)}
+    qubit_map = {q: i for i, q in enumerate(qc.qubits)}
 
     ctl: list[tuple[int, bool]] = []
-    disp = ctx._UNCONTROLLED
+    disp = _UNCONTROLLED
     for inst in qc.data:
         op = inst.operation
         # Use `_condition` to silence this warning:
         #   DeprecationWarning: The property ``qiskit.circuit.instruction.Instruction.condition`` is deprecated as of qiskit 1.3.0.
         if _QISKIT_1 and isinstance(op, qiskit.circuit.Instruction) and not isinstance(op, qiskit.circuit.ControlFlowOp) and (cond := op._condition) is not None and not ctx.eval_cond(cond):
             continue
-        disp[type(op)](ctx, ctl, op, inst.clbits, [qubit_map[q] for q in inst.qubits])
+        disp[type(op)](ctx, sim, ctl, op, inst.clbits, [qubit_map[q] for q in inst.qubits])
 
     return (clbits, saved)
 
@@ -702,7 +682,12 @@ class Job(qiskit.providers.JobV1):
                 )
                 sim.reset_state()
 
-                m = sum(1 << i for i, clbit in enumerate(qc.clbits) if run_clbits[clbit])
+                m = 0
+                add = 1
+                for clbit in qc.clbits:
+                    if run_clbits[clbit]:
+                        m += add
+                    add <<= 1
                 key = f'{m:#x}'
                 counts[key] = counts.get(key, 0) + 1
                 memory.append(key)
