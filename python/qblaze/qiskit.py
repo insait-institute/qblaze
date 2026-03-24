@@ -540,21 +540,18 @@ def run_circuit(
     [(1+0j), 0j, 0j, 0j]
     """
 
-    (clbits, saved) = _run_circuit(sim, qc, rng=rng, force_clbits=force_clbits, respect_barriers=respect_barriers)
+    if rng is None:
+        rng = random.Random()
+    (clbits, saved) = _run_circuit(sim, qc, rng, force_clbits=force_clbits, respect_barriers=respect_barriers)
     return (clbits, [sv for inst,sv in saved])
 
 
 def _run_circuit(
-    sim: Simulator, qc: qiskit.QuantumCircuit,
+    sim: Simulator, qc: qiskit.QuantumCircuit, rng: random.Random,
     /,
-    rng: random.Random | None = None,
-    *,
     force_clbits: dict[qiskit.circuit.Clbit, bool] = {},
     respect_barriers: bool = False,
 ) -> tuple[dict[qiskit.circuit.Clbit, bool], list[_SaveData]]:
-    if rng is None:
-        rng = random.Random()
-
     saved: list[_SaveData] = []
     clbits = {c: False for c in qc.clbits}
     ctx = _Context(rng, saved, sim, force_clbits, clbits, respect_barriers)
@@ -697,10 +694,10 @@ class Job(qiskit.providers.JobV1):
             res_data: dict[str, typing.Any] = {}
 
             sim = Simulator(**sim_options)
+            rng = random.Random(seed)
             for shot in range(shots):
                 run_clbits, run_sv = _run_circuit(
-                    sim, qc,
-                    rng = random.Random(seed + shot) if seed is not None else None,
+                    sim, qc, rng,
                     **run_options,
                 )
                 sim.reset_state()
@@ -726,7 +723,7 @@ class Job(qiskit.providers.JobV1):
                     memory = memory,
                     **res_data,
                 ),
-                seed = self.__options.get('seed_simulator'),
+                seed = seed,
                 # Try to imitate the header Qiskit Aer returns.
                 header = {
                     'n_qubits': qc.num_qubits,
