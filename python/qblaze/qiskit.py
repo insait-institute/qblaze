@@ -216,8 +216,16 @@ class _Context:
         [q] = qubits
         return self.sim.mcx(ctl, q)
 
-    @_CONTROLLED.register(qiskit.circuit.library.CXGate)
     @_UNCONTROLLED.register(qiskit.circuit.library.CXGate)
+    def handle_uncontrolled_cx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
+        assert not clbits
+        [c, q] = qubits
+        if op.ctrl_state:
+            self.sim.cx(c, q)
+        else:
+            self.sim.mcx([(c, False)], q)
+
+    @_CONTROLLED.register(qiskit.circuit.library.CXGate)
     def handle_cx(self, ctl: list[tuple[int, bool]], op: qiskit.circuit.library.CXGate, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
         assert not clbits
         [c, q] = qubits
