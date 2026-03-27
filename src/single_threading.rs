@@ -44,6 +44,16 @@ impl Pool {
     pub(crate) fn borrow<'a>(&'a mut self) -> PoolRef<'a> {
         PoolRef::single_threaded()
     }
+
+    #[inline(always)]
+    pub(crate) fn maybe_borrow<'b>(&'b mut self, _really: bool) -> PoolRef<'b> {
+        PoolRef::single_threaded()
+    }
+
+    #[inline(always)]
+    pub fn num_threads(&self) -> usize {
+        1
+    }
 }
 
 pub struct PoolRef<'a>(PhantomData<&'a mut Pool>);
@@ -52,16 +62,6 @@ impl<'a> PoolRef<'a> {
     #[inline(always)]
     pub fn single_threaded() -> Self {
         Self(PhantomData)
-    }
-
-    #[inline(always)]
-    pub fn borrow<'b>(&'b mut self) -> PoolRef<'b> {
-        Self::single_threaded()
-    }
-
-    #[inline(always)]
-    pub fn num_threads(&self) -> usize {
-        1
     }
 
     #[inline(always)]

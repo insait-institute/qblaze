@@ -471,7 +471,7 @@ pub struct PoolRef<'a> {
 
 impl<'a> PoolRef<'a> {
     #[inline(always)]
-    pub fn borrow<'b>(&'b mut self) -> PoolRef<'b> {
+    fn borrow<'b>(&'b mut self) -> PoolRef<'b> {
         Self {
             state: self.state,
         }
