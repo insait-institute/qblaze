@@ -1,6 +1,6 @@
 [package]
 name = "qblaze"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/insait-institute/qblaze"
@@ -34,7 +34,7 @@ generation = false
 asset = [{from="include/*.h", to=""}]
 
 [package.metadata.capi.library]
-version = "0.1.0"
+version = "0.1.1"
 version_suffix_components = 1
 
 [profile.dev]
