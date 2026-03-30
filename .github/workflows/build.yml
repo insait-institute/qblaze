@@ -48,6 +48,27 @@ jobs:
       - name: Run unit tests
         run: cargo test --verbose
 
+  rust_wasm:
+    name: Rust WebAssembly library
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Rust
+        run: |
+          rustup set profile minimal
+          rustup update stable
+          rustup default stable
+          rustup target add wasm32-wasip1
+      - uses: actions/checkout@v4
+
+      - name: Build WebAssembly library
+        run: cargo rustc --crate-type=staticlib --target=wasm32-wasip1 --release --no-default-features --features=capi
+
+      - name: Upload WebAssembly library
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: target/wasm32-wasip1/release/libqblaze.a
+
   python_sdist:
     name: Python sdist and documentation
     runs-on: ubuntu-24.04
