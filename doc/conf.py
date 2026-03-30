@@ -4,8 +4,7 @@ import sys
 import tomllib
 
 
-src_dir = f'{os.path.dirname(__file__)}/..'
-with open(src_dir + '/Cargo.toml', 'rb') as f:
+with open('../Cargo.toml', 'rb') as f:
     cargo_meta = tomllib.load(f)
 
 project = cargo_meta['package']['name']
@@ -52,7 +51,7 @@ autodoc_default_options = {
     'undoc-members': True,
 }
 
-c_autodoc_roots = [src_dir]
+c_autodoc_roots = ['..']
 try:
     _clang_libdir = os.environ['QBLAZE_SPHINX_AUTODOC_CLANG_LIBDIR']
 except KeyError:
@@ -84,7 +83,7 @@ def setup(app):
     env.setdefault('RUSTFLAGS', f'-C opt-level=1 -C lto=no -C codegen-units={2*os.process_cpu_count()}')
     subprocess.check_call(
         [sys.executable, '-P', 'setup.py', 'build', '--build-lib', tmpdir],
-        cwd = src_dir,
+        cwd = '..',
         env = env,
     )
 
