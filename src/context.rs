@@ -48,6 +48,7 @@ impl Context {
 }
 
 impl Perf {
+    #[cfg(feature = "perf")]
     pub fn write(&mut self, event: &'static str, time: u64, data: &[u64]) {
         self.perf_events.push((
             event.as_ptr(),
