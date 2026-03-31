@@ -399,9 +399,8 @@ static PyObject *Simulator_clone(PyObject *o, PyObject *arg) {
 	return (PyObject*)ro;
 }
 
-static PyObject *Simulator_iter(PyObject *self_obj, PyObject *arg) {
+static PyObject *Simulator_iter(PyObject *self_obj) {
 	SimulatorObject *self = (SimulatorObject*)self_obj;
-	(void)arg;
 	ModState *st = mod_get(Py_TYPE(&self->ob_base));
 
 	QBlazeSimulator *sim = Simulator_acquire(self);
