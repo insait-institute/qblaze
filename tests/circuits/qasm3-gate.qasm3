@@ -1,0 +1,9 @@
+OPENQASM 3.0;
+include "stdgates.inc";
+gate phxz(a,x,z) q0 {
+  rz(-a*pi) q0;
+  rx(x*pi) q0;
+  rz((a+z)*pi) q0;
+}
+qreg q[1];
+phxz(0.7070988294,0.1093253464,0.07720078801) q[0];

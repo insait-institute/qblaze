@@ -426,11 +426,16 @@ class _Context:
             self.sv.append((op, sv))
             return
 
-        match op:
-            case qiskit.circuit.Gate() if op.num_qubits == 1:
-                assert not clbits
+        if isinstance(op, qiskit.circuit.Gate) and op.num_qubits == 1:
+            assert not clbits
+            try:
+                m = op.to_matrix()
+            except qiskit.circuit.exceptions.CircuitError:
+                # Qiskit...
+                pass
+            else:
+                (theta, phi, lam) = _zyz_decomposer.angles(m)
                 [q] = qubits
-                (theta, phi, lam) = _zyz_decomposer.angles(op.to_matrix())
                 return sim.u3(q, theta, phi, lam)
 
         if (sub := op.definition) is not None:
@@ -439,13 +444,18 @@ class _Context:
 
     @_CONTROLLED.register(qiskit.circuit.Instruction)
     def handle_generic_controlled(self, sim: Simulator, ctl: list[tuple[int, bool]], op: qiskit.circuit.Instruction, clbits: list[qiskit.circuit.Clbit], qubits: list[int], /) -> None:
-        match op:
-            case qiskit.circuit.Gate() if op.num_qubits == 1:
-                assert not clbits
+        if isinstance(op, qiskit.circuit.Gate) and op.num_qubits == 1:
+            assert not clbits
+            try:
+                m = op.to_matrix()
+            except qiskit.circuit.exceptions.CircuitError:
+                # Qiskit...
+                pass
+            else:
+                # rz(lam); h; rz(theta); h; rz(phi)
+                (theta, phi, lam, corr) = _zxz_decomposer.angles_and_phase(m)
                 [q] = qubits
                 subctl = [*ctl, (q, True)]
-                # rz(lam); h; rz(theta); h; rz(phi)
-                (theta, phi, lam, corr) = _zxz_decomposer.angles_and_phase(op.to_matrix())
                 corr -= (theta + phi + lam) / 2
                 if abs(theta) < 1e-8:
                     sim.mcphase(subctl, lam + phi)
