@@ -202,7 +202,7 @@ jobs:
 
       - name: Prepare environment
         run: |
-          pip install --constraint=tests/pip-constraints.txt --only-binary=numpy,scipy,qiskit,qiskit-aer pytest numpy qiskit==${{ matrix.qiskit }} qiskit-aer==0.17.2
+          pip install --constraint=tests/pip-constraints.txt --only-binary=numpy,scipy,qiskit,qiskit-aer pytest numpy qiskit==${{ matrix.qiskit }} qiskit-aer==0.17.2 qiskit_qasm3_import
           pip install --only-binary=qblaze --no-index --find-links=dist qblaze
 
       - name: Run tests
