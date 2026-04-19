@@ -173,8 +173,9 @@ jobs:
           pip install --constraint=tests/pip-constraints.txt --only-binary=numpy pytest numpy
           pip install --only-binary=qblaze --no-index --find-links=dist qblaze
 
+      # Most tests depend on Qiskit.
       - name: Run tests
-        run: pytest --ignore tests/test_qiskit.py --ignore python/qblaze/qiskit.py
+        run: pytest tests/test_iter.py python/qblaze/__init__.pyi
 
   qiskit_test:
     name: Run Qiskit ${{ matrix.qiskit }} tests on ${{ matrix.os }}
