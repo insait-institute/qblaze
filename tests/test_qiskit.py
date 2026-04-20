@@ -1,8 +1,9 @@
 import pytest
 
-import warnings
-import random
+import itertools
 import math
+import random
+import warnings
 
 import qblaze.qiskit
 import qiskit
@@ -71,78 +72,95 @@ GATES = [
     (qiskit.circuit.library.CU3Gate, 3),
 ]
 
+PARAM_VAL = [i / 8 * TAU for i in range(8)]
 
 @pytest.mark.parametrize("gate_type, n_params", GATES)
 def test_gate(gate_type, n_params):
-    gate = gate_type(*(random.random() * TAU for _ in range(n_params)))
+    for param_tup in make_params(n_params):
+        gate = gate_type(*param_tup)
 
-    n = gate.num_qubits
-    q1 = qiskit.QuantumRegister(n)
-    q2 = qiskit.QuantumRegister(n)
-    circ = qiskit.QuantumCircuit(q1, q2)
-    if n:
-        circ.h(q1)
-    for q1i, q2i in zip(q1, q2, strict=True):
-        circ.cx(q1i, q2i)
-    circ.append(gate, [*q2])
+        n = gate.num_qubits
+        q1 = qiskit.QuantumRegister(n)
+        q2 = qiskit.QuantumRegister(n)
+        circ = qiskit.QuantumCircuit(q1, q2)
+        if n:
+            circ.h(q1)
+        for q1i, q2i in zip(q1, q2, strict=True):
+            circ.cx(q1i, q2i)
+        circ.append(gate, [*q2])
 
-    sim = qblaze.Simulator()
-    qblaze.qiskit.run_circuit(sim, circ)
-    sv = numpy.zeros(2**(2*n), numpy.complex128)
-    sim.flush()
-    sim.copy_amplitudes(sv)
+        sim = qblaze.Simulator()
+        qblaze.qiskit.run_circuit(sim, circ)
+        sv = numpy.zeros(2**(2*n), numpy.complex128)
+        sim.flush()
+        sim.copy_amplitudes(sv)
 
-    m_got = sv.reshape((2**n, 2**n)) * 2**(n/2)
-    m_want = gate.to_matrix()
-    (m_got, m_want) = clear_gphase(m_got, m_want)
+        m_got = sv.reshape((2**n, 2**n)) * 2**(n/2)
+        m_want = gate.to_matrix()
+        (m_got, m_want) = clear_gphase(m_got, m_want)
 
-    if numpy.abs(m_got - m_want).max() > 0.001:
-        raise RuntimeError(f'Gate error for {gate}:\ngot:\n{m_got}\nwant:\n{m_want}')
+        if numpy.abs(m_got - m_want).max() > 0.001:
+            raise RuntimeError(f'Gate error for {gate_type}{param_tup}:\ngot:\n{m_got}\nwant:\n{m_want}')
+
+
+def make_params(n):
+    if n == 0:
+        yield []
+        return
+
+    for i in range(10):
+        yield [(random.random() * 2 - 1) * TAU for i in range(n)]
+
+    seen = set()
+    n_tests = 3**n
+    while len(seen) < n_tests:
+        while True:
+            ps = tuple(random.choices(range(-7, 8), k=n))
+            if ps not in seen:
+                break
+        seen.add(ps)
+        yield [v * TAU / 8 for v in ps]
 
 
 @pytest.mark.parametrize("gate_type, n_params", GATES)
 @pytest.mark.parametrize("n_controls, mask", [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2), (2, 3)])
 def test_controlled_gate(gate_type, n_params, n_controls, mask):
-    gate = gate_type(*(random.random() * TAU for _ in range(n_params)))
+    for param_tup in make_params(n_params):
+        gate = gate_type(*param_tup)
 
-    n = gate.num_qubits
-    qc = qiskit.QuantumRegister(n_controls)
-    q1 = qiskit.QuantumRegister(n)
-    q2 = qiskit.QuantumRegister(n)
-    circ = qiskit.QuantumCircuit(q1, q2, qc)
-    circ.h(qc)
-    if n:
-        circ.h(q1)
-    for q1i, q2i in zip(q1, q2, strict=True):
-        circ.cx(q1i, q2i)
+        n = gate.num_qubits
+        qc = qiskit.QuantumRegister(n_controls)
+        q1 = qiskit.QuantumRegister(n)
+        q2 = qiskit.QuantumRegister(n)
+        circ = qiskit.QuantumCircuit(q1, q2, qc)
+        circ.h(qc)
+        if n:
+            circ.h(q1)
+        for q1i, q2i in zip(q1, q2, strict=True):
+            circ.cx(q1i, q2i)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', category=(DeprecationWarning, PendingDeprecationWarning))
-        # Silence the following warnings:
-        #   DeprecationWarning: The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.duration`` is deprecated as of Qiskit 1.3.0.
-        #   DeprecationWarning: The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.unit`` is deprecated as of qiskit 1.3.0.
-        #   PendingDeprecationWarning: The method ``qiskit.circuit.library.standard_gates.x.MCXGate.get_num_ancilla_qubits()`` is pending deprecation as of qiskit 1.3.
-        cgate = gate.control(n_controls, ctrl_state=mask)
-    circ.append(cgate, [*qc, *q2])
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=(DeprecationWarning, PendingDeprecationWarning))
+            # Silence the following warnings:
+            #   DeprecationWarning: The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.duration`` is deprecated as of Qiskit 1.3.0.
+            #   DeprecationWarning: The property ``qiskit.dagcircuit.dagcircuit.DAGCircuit.unit`` is deprecated as of qiskit 1.3.0.
+            #   PendingDeprecationWarning: The method ``qiskit.circuit.library.standard_gates.x.MCXGate.get_num_ancilla_qubits()`` is pending deprecation as of qiskit 1.3.
+            cgate = gate.control(n_controls, ctrl_state=mask)
+        circ.append(cgate, [*qc, *q2])
 
-    sim = qblaze.Simulator()
-    qblaze.qiskit.run_circuit(sim, circ)
-    sv = numpy.zeros(2**(n_controls + 2*n), numpy.complex128)
-    sim.flush()
-    sim.copy_amplitudes(sv)
+        sim = qblaze.Simulator()
+        qblaze.qiskit.run_circuit(sim, circ)
+        sv = numpy.zeros(2**(n_controls + 2*n), numpy.complex128)
+        sim.flush()
+        sim.copy_amplitudes(sv)
 
-    m_got = sv.reshape((2**n_controls, 2**n, 2**n)) * 2**((n+n_controls)/2)
-    for i in range(2**n_controls):
-        if i == mask:
-            continue
-        (m_got0,) = clear_gphase(m_got[i])
-        if numpy.abs(m_got0 - numpy.eye(2**n)).max() > 0.001:
-            raise RuntimeError(f'Gate error for controlled {gate} when disabled:\ngot:\n{m_got0}\nwant: identity')
+        m_got = sv.reshape((2**n_controls, 2**n, 2**n)) * 2**((n+n_controls)/2)
+        m_want = numpy.tile(numpy.eye(2**n, dtype=numpy.complex128), (2**n_controls, 1, 1))
+        m_want[mask] = gate.to_matrix()
+        (m_got, m_want) = clear_gphase(m_got, m_want)
 
-    (m_got1, m_want) = clear_gphase(m_got[mask], gate.to_matrix())
-    if numpy.abs(m_got1 - m_want).max() > 0.001:
-        raise RuntimeError(f'Gate error for controlled {gate} when enabled:\ngot:\n{m_got1}\nwant:\n{m_want}')
-
+        if numpy.abs(m_got - m_want).max() > 0.001:
+            raise RuntimeError(f'Gate error for controlled {gate_type}{param_tup}:\ngot:\n{m_got}\nwant: {m_want}')
 
 
 @pytest.mark.skipif(not qiskit.__version__.startswith('1.'), reason='c_if removed in Qiskit 2.0')

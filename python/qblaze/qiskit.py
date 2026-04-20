@@ -462,6 +462,7 @@ class _Context:
                 elif abs(theta - PI) < 1e-8 or abs(theta + PI) < 1e-8:
                     sim.mcphase(subctl, lam - phi)
                     sim.mcx(ctl, q)
+                    corr += phi
                 else:
                     if abs(lam) >= 1e-8:
                         sim.mcphase(subctl, lam)
