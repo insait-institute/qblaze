@@ -913,6 +913,18 @@ static PyObject *Simulator_copy_amplitudes(PyObject *o, PyObject *arg) {
 	Py_RETURN_NONE;
 }
 
+static PyObject *Simulator_state_len(PyObject *o, PyObject *arg) {
+	SimulatorObject *self = (SimulatorObject*)o;
+	(void)arg;
+	QBlazeSimulator *sim = Simulator_acquire(self);
+	if (!sim) {
+		return NULL;
+	}
+	size_t n = qblaze_state_len(sim);
+	Simulator_release(self, sim);
+	return PyLong_FromSize_t(n);
+}
+
 #define meth_NOARGS2(name, impl) {#name, impl, METH_NOARGS, NULL}
 #define meth_NOARGS(name) meth_NOARGS2(name, &Simulator_##name)
 #define meth_O(name) {#name, Simulator_##name, METH_O, NULL}
@@ -958,6 +970,7 @@ static PyMethodDef Simulator_methods[] = {
 	meth_O(qubit_probs),
 
 	meth_O(copy_amplitudes),
+	meth_NOARGS(state_len),
 
 	meth_NOARGS(_perf),
 

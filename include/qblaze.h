@@ -222,6 +222,14 @@ int qblaze_copy_amplitudes(QBlazeSimulator *sim, QBlazeComplex *buffer, size_t l
 /** */
 char *_qblaze_perf(QBlazeSimulator *sim);
 
+/**
+ * Return the number of entries in the sparse state vector.
+ *
+ * The length returned is the one internal to the simulator, which is only guaranteed
+ * to match the the logical state if there are no enqueued gates (see `qblaze_flush()`).
+ */
+size_t qblaze_state_len(QBlazeSimulator *sim);
+
 
 /**
  * Basis vector iterator.
