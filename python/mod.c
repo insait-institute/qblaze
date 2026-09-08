@@ -374,6 +374,9 @@ static PyObject *Simulator_reset_state(PyObject *o, PyObject *arg) {
 	SimulatorObject *self = (SimulatorObject*)o;
 	(void)arg;
 	QBlazeSimulator *sim = Simulator_acquire(self);
+	if (!sim) {
+		return NULL;
+	}
 	qblaze_reset_state(sim);
 	Simulator_release(self, sim);
 	Py_RETURN_NONE;
@@ -384,6 +387,9 @@ static PyObject *Simulator_clone(PyObject *o, PyObject *arg) {
 	(void)arg;
 	// If iterators exist, the simulator is flushed.
 	QBlazeSimulator *sim = Simulator_acquire(self);
+	if (!sim) {
+		return NULL;
+	}
 	QBlazeSimulator *rsim = qblaze_clone(sim);
 	Simulator_release(self, sim);
 	if (!rsim) {
@@ -404,6 +410,10 @@ static PyObject *Simulator_iter(PyObject *self_obj) {
 	ModState *st = mod_get(Py_TYPE(&self->ob_base));
 
 	QBlazeSimulator *sim = Simulator_acquire(self);
+	if (!sim) {
+		return NULL;
+	}
+
 	IteratorObject *io = NULL;
 
 	int r;
