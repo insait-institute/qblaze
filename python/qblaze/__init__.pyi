@@ -362,6 +362,27 @@ class Simulator:
                    0.35355339+0.j, 0.35355339+0.j, 0.35355339+0.j, 0.35355339+0.j])
         """
 
+    def state_len(self, /) -> int:
+        """Return the number of entries in the sparse state vector.
+
+        The length returned is the one internal to the simulator, which is only guaranteed
+        to match the the logical state if there are no enqueued gates
+        (see :py:func:`flush() <qblaze.Simulator.flush>`).
+
+        Example:
+
+            >>> sim.state_len()
+            1
+            >>> sim.h(0)
+            >>> sim.flush()
+            >>> sim.state_len()
+            2
+            >>> sim.h(0)
+            >>> sim.flush()
+            >>> sim.state_len()
+            1
+        """
+
     def __iter__(self, /) -> typing.Iterator[tuple[int, complex]]:
         """
         Iterate over the non-zero state vector amplitudes. The results are returned in an

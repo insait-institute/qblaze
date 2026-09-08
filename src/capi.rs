@@ -324,6 +324,12 @@ pub unsafe extern "C" fn _qblaze_perf(sim: *mut QBlazeSimulator) -> *mut libc::c
     Box::into_raw(buf.into_boxed_slice()) as *mut u8 as *mut _
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qblaze_state_len(sim: *mut QBlazeSimulator) -> usize {
+    let sim = unsafe { &mut *(sim as *mut crate::Simulator) };
+    sim.state_len()
+}
+
 #[inline]
 fn qblaze_iter_priv_layout(qubit_count: usize) -> alloc::Layout {
     assert!(qubit_count % 64 == 0);

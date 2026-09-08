@@ -76,6 +76,11 @@ impl Simulator {
         self.state.max_qubit()
     }
 
+    /// Return the number of entries in the sparse state vector.
+    pub fn state_len(&self) -> usize {
+        self.state.len()
+    }
+
     /// Apply a U3 gate.
     pub fn u3(&mut self, q: Qubit, gate: U3) {
         match self.qubits.entry(q) {
