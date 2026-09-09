@@ -24,16 +24,18 @@ LIB_VERSION = cargo_meta['version']
 
 class BuildExt(build_ext):
     def build_extension(self, ext):
-        rust_dir = os.path.join(os.path.abspath(self.build_temp), 'rust-build')
-        os.makedirs(rust_dir, exist_ok=True)
-
         cargo_cmd = [
             CARGO, 'rustc',
             '--crate-type=staticlib',
             '--profile=' + CARGO_PROFILE,
             '--message-format=json',
-            '--target-dir=' + rust_dir,
         ]
+
+        # Build in `build_temp` instead of in the source directory by default
+        if os.getenv('CARGO_TARGET_DIR') is None:
+            rust_dir = os.path.join(os.path.abspath(self.build_temp), 'rust-build')
+            os.makedirs(rust_dir, exist_ok=True)
+            cargo_cmd.append('--target-dir=' + rust_dir)
 
         # Work around https://github.com/rust-lang/rust/issues/104707
         match platform.system():
