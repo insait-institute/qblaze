@@ -3,14 +3,18 @@ name: Build
 on:
   workflow_dispatch:
     inputs:
+      py_sdist_deps:
+        type: string
+        required: true
+        default: build==1.6.0 setuptools==84.0.0
       py_doc_deps:
         type: string
         required: true
-        default: build==1.4.2 setuptools==82.0.1 sphinx==9.1.0 sphinx-multiversion==0.2.4 sphinx-rtd-theme==3.1.0 sphinx-inline-tabs==2025.12.21.14 sphinx-c-autodoc==1.6.0 clang==18.1.8
+        default: sphinx==9.1.0 sphinx-multiversion==0.2.4 sphinx-rtd-theme==3.1.0 sphinx-inline-tabs==2025.12.21.14 sphinx-c-autodoc==1.7.0 clang==18.1.8 qiskit==2.5.2
       py_cibw_deps:
         type: string
         required: true
-        default: cibuildwheel==3.4.0
+        default: cibuildwheel==4.2.1
       rust_version:
         type: string
         required: true
@@ -29,13 +33,13 @@ jobs:
           rustup set profile minimal
           rustup update ${{ matrix.toolchain }}
           rustup default ${{ matrix.toolchain }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build crate
         run: cargo package
       - name: Upload crate
         if: ${{ matrix.toolchain == 'stable' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-crate
           path: target/package/*.crate
@@ -44,7 +48,7 @@ jobs:
         run: cargo doc --no-deps
       - name: Upload documentation
         if: ${{ matrix.toolchain == 'stable' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-doc
           path: target/doc
@@ -62,19 +66,38 @@ jobs:
           rustup update ${{ inputs.rust_version }}
           rustup default ${{ inputs.rust_version }}
           rustup target add wasm32-wasip1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build WebAssembly library
         run: cargo rustc --crate-type=staticlib --target=wasm32-wasip1 --release --no-default-features --features=capi
 
       - name: Upload WebAssembly library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm
           path: target/wasm32-wasip1/release/libqblaze.a
 
   python_sdist:
-    name: Python sdist and documentation
+    name: Python sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: pip install ${{ inputs.py_sdist_deps }}
+      - uses: actions/checkout@v7
+
+      - name: Build sdist
+        run: python -Pm build -s
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-sdist
+          path: dist/*.tar.gz
+
+  python_doc:
+    name: Python documentation
     runs-on: ubuntu-24.04
     steps:
       - name: Install Rust
@@ -82,34 +105,23 @@ jobs:
           rustup set profile minimal
           rustup update ${{ inputs.rust_version }}
           rustup default ${{ inputs.rust_version }}
-
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
       - name: Install libclang
         run: |
           sudo apt-get update
           sudo apt-get -y install libclang-18-dev
-
-      - run: pip install ${{ inputs.py_doc_deps }}
-      - uses: actions/checkout@v4
-
-      - name: Build sdist
-        run: python -Pm build -s
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
+      - name: Install Python
+        uses: actions/setup-python@v7
         with:
-          name: python-sdist
-          path: dist/*.tar.gz
+          python-version: '3.13'
+      - run: pip install ${{ inputs.py_sdist_deps }} ${{ inputs.py_doc_deps }}
+      - uses: actions/checkout@v7
 
       - name: Build documentation
         run: make -C doc
         env:
           QBLAZE_SPHINX_AUTODOC_CLANG_LIBDIR: '/usr/lib/llvm-18/lib'
       - name: Upload documentation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: doc
           path: doc/_build/html/
@@ -123,15 +135,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
       - run: pip install ${{ inputs.py_cibw_deps }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-sdist
           path: src
@@ -143,7 +155,7 @@ jobs:
           # the action runner doesn't have Podman installed
           CIBW_CONTAINER_ENGINE: "docker; disable_host_mount: true"
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-wheels-${{ matrix.os }}
           path: dist/*.whl
@@ -157,13 +169,13 @@ jobs:
         python: ['3.11', '3.12', '3.13', '3.14', '3.14t']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-wheels-${{ matrix.os }}
           path: dist
@@ -186,16 +198,16 @@ jobs:
         # Qiskit and Qiskit Aer binaries are not available for Windows on ARM
         # Qiskit Aer binaries for manylinux on ARM are not available for Python 3.14.
         python: ['3.11', '3.13']
-        qiskit: ['1.4.5', '2.3.1']
+        qiskit: ['1.4.6', '2.5.2']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-wheels-${{ matrix.os }}
           path: dist
