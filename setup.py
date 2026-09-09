@@ -10,6 +10,7 @@ from setuptools.command.build_ext import build_ext
 
 
 CARGO = os.getenv('CARGO', 'cargo')
+CARGO_PROFILE = os.getenv('CARGO_PROFILE', 'release')
 
 
 cargo_meta = json.loads(subprocess.check_output([
@@ -29,7 +30,7 @@ class BuildExt(build_ext):
         cargo_cmd = [
             CARGO, 'rustc',
             '--crate-type=staticlib',
-            '--profile=release',
+            '--profile=' + CARGO_PROFILE,
             '--message-format=json',
             '--target-dir=' + rust_dir,
         ]
