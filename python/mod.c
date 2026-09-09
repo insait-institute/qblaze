@@ -187,7 +187,7 @@ static ModState *mod_get(PyTypeObject *ty) {
 static PyObject *Simulator_max_qubit_count(PyObject *ty, PyObject *arg) {
 	(void)ty;
 	(void)arg;
-	return PyLong_FromUnsignedLong(qblaze_max_qubit_count());
+	return PyLong_FromSize_t(qblaze_max_qubit_count());
 }
 
 static void Simulator_err_concurrent(void) {
@@ -241,7 +241,7 @@ static int opt_size(PyObject *v, const char *name, struct QBlazeConfig *out) {
 		return -1;
 	}
 	size_t sz;
-	long r = PyLong_AsSsize_t(v);
+	Py_ssize_t r = PyLong_AsSsize_t(v);
 	if (r >= 0) {
 		if (r == 0) return 0;
 		sz = r;
