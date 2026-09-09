@@ -38,6 +38,7 @@ pub trait Statevector: Send + Sync {
     fn perform_sfree(&mut self, ctx: &mut Context, op: &mut sfree::Queue, prec: u8);
     fn export<'a>(&'a self) -> ExportSlice<'a>;
     fn import(&mut self, ctx: &mut Context, data: ExportSlice);
+    fn import_dense(&mut self, ctx: &mut Context, data: &[Complex]);
     fn trim(&mut self);
     fn dyn_clone(&self, ctx: &mut Context) -> Box<dyn Statevector>;
 }
@@ -824,6 +825,44 @@ impl<const N: usize> Statevector for StatevectorImpl<N> {
             self.state.set_len([data.partitioned_at, data.len - data.partitioned_at]);
         }
         self.partitioned_by = data.partitioned_by.map(BitIndex::from);
+    }
+
+    fn import_dense(&mut self, ctx: &mut Context, data: &[Complex]) {
+        const CHUNK_SIZE: usize = 1 << 12;
+        let want_val = |v: &Complex| v.norm_inf() >= Complex::EPS;
+
+        let lens = ctx.pool.borrow().map(data.chunks(CHUNK_SIZE), #[inline(always)] move |chunk| {
+            chunk.iter().copied().filter(want_val).count()
+        });
+
+        let Ok(mut w) = BufWriter::<_, 2>::reserve_chunks(
+            mem::take(&mut self.old_buf),
+            |i| if i == 0 { &lens[..] } else { &[] }.iter().copied(),
+        ) else {
+            return self.clear();
+        };
+        let [out, _] = w.start();
+
+        ctx.pool.borrow().scope(|sc| {
+            sc.for_each(out.into_iter().enumerate(), move |(chunk_i, mut chunk)| {
+                let start = chunk_i * CHUNK_SIZE;
+                let chunk_data = &data[start..(start + CHUNK_SIZE).min(data.len())];
+                for (src_i, val) in chunk_data.iter().enumerate() {
+                    if !want_val(val) {
+                        continue;
+                    }
+                    unsafe { chunk.push_unchecked(sfree::Element {
+                        bits: BitSet::from_index(start + src_i),
+                        val: *val,
+                    }) };
+                }
+            });
+        });
+
+        unsafe {
+            self.set_state(w.finish());
+        }
+        self.partitioned_by = None;
     }
 
     fn trim(&mut self) {

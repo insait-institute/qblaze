@@ -845,69 +845,87 @@ static PyObject *Simulator_qubit_probs(PyObject *o, PyObject *arg) {
 	return ret;
 }
 
-static PyObject *Simulator_copy_amplitudes(PyObject *o, PyObject *arg) {
-	SimulatorObject *self = (SimulatorObject*)o;
-	Py_buffer buf;
-	int r = PyObject_GetBuffer(arg, &buf, PyBUF_WRITABLE | PyBUF_FORMAT | PyBUF_ND);
-	if (r < 0) return NULL;
-	if (buf.readonly) {
-		PyBuffer_Release(&buf);
+static Py_ssize_t decode_complex_buffer(PyObject *arg, Py_buffer *buf, bool writable) {
+	int flags = (writable ? PyBUF_WRITABLE : 0) | PyBUF_FORMAT | PyBUF_ND;
+	int r = PyObject_GetBuffer(arg, buf, flags);
+	if (r < 0) return -1;
+	if (writable && buf->readonly) {
+		PyBuffer_Release(buf);
 		PyErr_SetString(PyExc_TypeError, "Expected mutable buffer");
-		return NULL;
+		return -1;
 	}
-	if (!PyBuffer_IsContiguous(&buf, 'C')) {
-		PyBuffer_Release(&buf);
+	if (!PyBuffer_IsContiguous(buf, 'C')) {
+		PyBuffer_Release(buf);
 		PyErr_SetString(PyExc_TypeError, "Expected C-contiguous buffer");
-		return NULL;
+		return -1;
 	}
-	if (!buf.format) {
+	if (!buf->format) {
 		Py_FatalError("Requested buffer with PyBUF_FORMAT but format not set");
 	}
 
 	Py_ssize_t n;
-	if (!strcmp(buf.format, "d") || !strcmp(buf.format, "@d") || !strcmp(buf.format, "=d")) {
-		if (buf.itemsize != sizeof(double)) {
+	if (!strcmp(buf->format, "d") || !strcmp(buf->format, "@d") || !strcmp(buf->format, "=d")) {
+		if (buf->itemsize != sizeof(double)) {
 			Py_FatalError("Buffer of doubles has the wrong item size");
 		}
-		switch (buf.ndim) {
+		switch (buf->ndim) {
 			case 1:
-				n = buf.shape[0];
+				n = buf->shape[0];
 				if (n % 2 == 1 || n <= 0) {
-					PyBuffer_Release(&buf);
+					PyBuffer_Release(buf);
 					PyErr_SetString(PyExc_TypeError, "Expected even number of elements");
-					return NULL;
+					return -1;
 				}
-				n >>= 1;
-				break;
+				return n >> 1;
 			case 2:
-				n = buf.shape[0];
-				if (buf.shape[1] != 2 || n <= 0) {
-					PyBuffer_Release(&buf);
+				n = buf->shape[0];
+				if (buf->shape[1] != 2 || n <= 0) {
+					PyBuffer_Release(buf);
 					PyErr_SetString(PyExc_TypeError, "Expected n-by-2 array");
-					return NULL;
+					return -1;
 				}
-				break;
+				return n;
 			default:
-				PyBuffer_Release(&buf);
+				PyBuffer_Release(buf);
 				PyErr_SetString(PyExc_TypeError, "Expected one or two dimensions");
-				return NULL;
+				return -1;
 		}
-	} else if (!strcmp(buf.format, "D") || !strcmp(buf.format, "Zd")) {
-		if (buf.itemsize != sizeof(QBlazeComplex)) {
+	}
+	if (!strcmp(buf->format, "D") || !strcmp(buf->format, "Zd")) {
+		if (buf->itemsize != sizeof(QBlazeComplex)) {
 			Py_FatalError("Buffer of complex doubles has the wrong item size");
 		}
-		if (buf.ndim != 1) {
-			PyBuffer_Release(&buf);
+		if (buf->ndim != 1) {
+			PyBuffer_Release(buf);
 			PyErr_SetString(PyExc_TypeError, "Buffer of complex doubles must be one-dimensional");
-			return NULL;
+			return -1;
 		}
-		n = buf.shape[0];
-	} else {
-		PyBuffer_Release(&buf);
-		PyErr_Format(PyExc_TypeError, "Expected buffer of doubles, got %s", buf.format);
-		return NULL;
+		return buf->shape[0];
 	}
+	PyBuffer_Release(buf);
+	PyErr_Format(PyExc_TypeError, "Expected buffer of doubles, got %s", buf->format);
+	return -1;
+}
+
+static PyObject *Simulator_copy_amplitudes(PyObject *o, PyObject *arg) {
+	SimulatorObject *self = (SimulatorObject*)o;
+	Py_buffer buf;
+	Py_ssize_t n = decode_complex_buffer(arg, &buf, true);
+	if (n < 0) return NULL;
+	int r;
 	DO_SLOW(r, qblaze_copy_amplitudes, buf.buf, n);
+	PyBuffer_Release(&buf);
+	if(r < 0) return NULL;
+	Py_RETURN_NONE;
+}
+
+static PyObject *Simulator_import_amplitudes(PyObject *o, PyObject *arg) {
+	SimulatorObject *self = (SimulatorObject*)o;
+	Py_buffer buf;
+	Py_ssize_t n = decode_complex_buffer(arg, &buf, false);
+	if (n < 0) return NULL;
+	int r;
+	DO_SLOW(r, qblaze_import_amplitudes, buf.buf, n);
 	PyBuffer_Release(&buf);
 	if(r < 0) return NULL;
 	Py_RETURN_NONE;
@@ -970,6 +988,7 @@ static PyMethodDef Simulator_methods[] = {
 	meth_O(qubit_probs),
 
 	meth_O(copy_amplitudes),
+	meth_O(import_amplitudes),
 	meth_NOARGS(state_len),
 
 	meth_NOARGS(_perf),

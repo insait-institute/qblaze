@@ -362,6 +362,21 @@ class Simulator:
                    0.35355339+0.j, 0.35355339+0.j, 0.35355339+0.j, 0.35355339+0.j])
         """
 
+    def import_amplitudes(self, buffer: collections.abc.Buffer, /) -> None:
+        """
+        Import the state vector amplitudes from :code:`buffer`. Any existing state is discarded.
+
+        The 'i'th element is imported as the amplitude of basis state 'i',
+        where the basis value of the 'k'th qubit equals the 'k'th bit of 'i'.
+
+        Example:
+
+            >>> state = numpy.array([0.7071067812, 0, -0.7071067812j])
+            >>> sim.import_amplitudes(state)
+            >>> list(sim)
+            [(0, (0.7071067812+0j)), (2, (0-0.7071067812j))]
+        """
+
     def state_len(self, /) -> int:
         """Return the number of entries in the sparse state vector.
 

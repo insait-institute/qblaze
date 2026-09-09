@@ -212,12 +212,21 @@ int qblaze_measure(QBlazeSimulator *sim, size_t target, uint64_t random, double 
 int qblaze_qubit_probs(QBlazeSimulator *sim, size_t target, double *p0, double *p1);
 
 /**
- * Copy the state vector amplitudes to 'buf' but no more than 'len' of them.
+ * Copy the state vector amplitudes to 'buffer' but no more than 'length' of them.
  *
  * The amplitude of the 'i'th state vector is stored at position 'i',
  * where the 'k'th bit of 'i' equals the basis value of the 'k'th qubit.
  */
 int qblaze_copy_amplitudes(QBlazeSimulator *sim, QBlazeComplex *buffer, size_t length);
+
+/**
+ * Import the state vector amplitudes from 'buffer', which is of length 'length'.  Any existing
+ * state is discarded.
+ *
+ * The 'i'th element is imported as the amplitude of basis state 'i',
+ * where the basis value of the 'k'th qubit equals the 'k'th bit of 'i'.
+ */
+int qblaze_import_amplitudes(QBlazeSimulator *sim, const QBlazeComplex *buffer, size_t length);
 
 /** */
 char *_qblaze_perf(QBlazeSimulator *sim);

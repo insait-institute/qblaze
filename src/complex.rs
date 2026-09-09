@@ -60,10 +60,15 @@ impl Complex {
     }
 
     #[inline(always)]
+    pub(crate) fn norm_inf(self) -> f64 {
+        self.0.abs().max(self.1.abs())
+    }
+
+    #[inline(always)]
     pub(crate) fn accumulate(&mut self, a: Complex) -> bool {
-        let norm = self.0.abs().max(self.1.abs());
+        let norm = self.norm_inf();
         *self += a;
-        self.0.abs().max(self.1.abs()) > Self::EPS * norm
+        self.norm_inf() > Self::EPS * norm
     }
 
     #[inline(always)]
