@@ -44,11 +44,20 @@ create-args = ["--volume=qblaze-ci-cargo:/tmp/cargo/registry", "--volume=qblaze-
 [tool.cibuildwheel.linux]
 before-all = "rm -rf /tmp/rustup/settings.toml /tmp/rustup/tmp && curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
 
+# The Rust static library is the same for every Python version. Share the
+# cargo target directory between all wheels.
 [tool.cibuildwheel.linux.environment]
 BUILD_WERROR = "1"
 CARGO_HOME = "/tmp/cargo"
+CARGO_TARGET_DIR = "/tmp/qblaze-cargo-target"
 RUSTUP_HOME = "/tmp/rustup"
 PATH = "/tmp/cargo/bin:$PATH"
+
+[tool.cibuildwheel.macos.environment]
+CARGO_TARGET_DIR = "$TMPDIR/qblaze-cargo-target"
+
+[tool.cibuildwheel.windows.environment]
+CARGO_TARGET_DIR = "$TEMP/qblaze-cargo-target"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
