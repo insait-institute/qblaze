@@ -247,16 +247,27 @@ impl<T, const N: usize> Buf<mem::MaybeUninit<T>, N> {
 pub struct WriteChunk<'a, T> {
     marker: PhantomData<&'a mut [mem::MaybeUninit<T>]>,
     ptr: *mut T,
+    #[cfg(debug_assertions)]
+    end: *mut T,
 }
 
 impl<'a, T> WriteChunk<'a, T> {
     #[inline(always)]
     pub unsafe fn push_unchecked(&mut self, val: T) {
         let ptr = self.ptr;
+        #[cfg(debug_assertions)]
+        assert!(ptr < self.end);
         unsafe {
             self.ptr = ptr.add(1);
             ptr.write(val)
         }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl<'a, T> Drop for WriteChunk<'a, T> {
+    fn drop(&mut self) {
+        assert!(self.ptr == self.end);
     }
 }
 
@@ -282,8 +293,17 @@ impl<'a, T> Iterator for WriteBuf<'a, T> {
             Some(WriteChunk {
                 marker: PhantomData,
                 ptr,
+                #[cfg(debug_assertions)]
+                end: self.ptr,
             })
         }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl<'a, T> Drop for WriteBuf<'a, T> {
+    fn drop(&mut self) {
+        assert!(self.sizes.is_empty());
     }
 }
 
