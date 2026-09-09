@@ -76,6 +76,12 @@ impl<const N: usize> Default for BitSet<N> {
 }
 
 impl<const N: usize> BitSet<N> {
+    pub(crate) fn from_index(i: usize) -> Self {
+        let mut r = Self::default();
+        r.0[0] = i as u64;
+        r
+    }
+
     #[inline(always)]
     pub fn get(&self, i: BitIndex<N>) -> bool {
         let i = i.get();
